@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deal Screener</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+:root{
+  --paper:#F3F5F7; --surface:#FFFFFF; --ink:#1A2330; --muted:#5B6775; --rule:#D5DBE1;
+  --steel:#2E5C8A; --steel-soft:#E3ECF5;
+  --pass:#1E7A4C; --pass-soft:#DDF0E5; --fail:#B3342F; --fail-soft:#F7E0DE; --warn:#8A5E0F; --warn-soft:#F6ECD6;
+  --font:"Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#121820; --surface:#1A222D; --ink:#E6EBF0; --muted:#9AA7B5; --rule:#2C3845;
+    --steel:#7FA9D6; --steel-soft:#1F3042;
+    --pass:#6CCB97; --pass-soft:#173326; --fail:#F08A83; --fail-soft:#3A1E1D; --warn:#E3B45C; --warn-soft:#352A14;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper); color:var(--ink); font-family:var(--font); font-size:16px; line-height:1.5;
+  font-variant-numeric:tabular-nums}
+.wrap{max-width:1320px; margin:0 auto; padding:48px 24px 80px}
+header{display:grid; grid-template-columns:1fr auto; gap:24px; align-items:end; margin-bottom:32px}
+h1{font-size:44px; line-height:1.05; font-weight:800; letter-spacing:-0.02em; margin:0}
+.lede{color:var(--muted); margin:10px 0 0; max-width:60ch}
+.privacy{display:flex; gap:8px; align-items:center; font-size:14px; color:var(--muted); max-width:32ch; text-align:right}
+.privacy svg{flex:none}
+
+.drop{display:block; border:2px dashed var(--rule); border-radius:10px; background:var(--surface);
+  padding:36px 24px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s}
+.drop:hover,.drop.over{border-color:var(--steel); background:var(--steel-soft)}
+.drop:focus-within{outline:3px solid var(--steel); outline-offset:3px}
+.drop strong{font-size:19px; display:block}
+.drop span{color:var(--muted); font-size:14px}
+.drop input{position:absolute; width:1px; height:1px; opacity:0}
+
+.criteria{display:flex; flex-wrap:wrap; gap:12px 28px; align-items:end; margin:28px 0 12px; padding-bottom:20px;
+  border-bottom:1px solid var(--rule)}
+.criteria h2{font-size:15px; font-weight:700; margin:0 12px 6px 0; flex-basis:100%}
+.field{display:flex; flex-direction:column; gap:4px; font-size:14px; color:var(--muted)}
+.field input{font:inherit; font-size:15px; color:var(--ink); background:var(--surface); border:1px solid var(--rule);
+  border-radius:6px; padding:7px 10px; width:130px}
+.field input:focus-visible,select:focus-visible,button:focus-visible,.cell-input:focus-visible{outline:3px solid var(--steel); outline-offset:1px}
+.static{font-size:15px; color:var(--ink); padding:7px 0}
+
+.bar{display:flex; justify-content:space-between; align-items:center; gap:16px; margin:24px 0 12px; flex-wrap:wrap}
+.tally{font-size:17px}
+.tally b{font-weight:800}
+.actions{display:flex; gap:10px}
+button{font:inherit; font-size:15px; font-weight:600; border-radius:6px; padding:9px 16px; cursor:pointer; border:1px solid var(--rule);
+  background:var(--surface); color:var(--ink)}
+button.primary{background:var(--steel); border-color:var(--steel); color:#fff}
+@media (prefers-color-scheme: dark){ button.primary{color:#0F1720} }
+button:disabled{opacity:.45; cursor:not-allowed}
+
+.table-scroll{overflow-x:auto; background:var(--surface); border:1px solid var(--rule); border-radius:10px}
+table{border-collapse:collapse; width:100%; min-width:980px}
+th,td{padding:10px 12px; text-align:left; border-bottom:1px solid var(--rule); vertical-align:middle}
+th{font-size:13px; font-weight:700; color:var(--muted); background:var(--paper)}
+tr.company:hover td{background:var(--steel-soft)}
+td.num{text-align:right}
+.name{font-weight:600; min-width:210px}
+.name .expand{margin-left:-6px}
+.name small{display:block; font-weight:400; color:var(--muted); font-size:13px}
+.expand{background:none; border:none; padding:2px 6px; color:var(--steel); font-size:14px}
+select,.cell-input{font:inherit; font-size:14px; color:var(--ink); background:transparent; border:1px solid transparent; border-radius:5px; padding:4px 6px}
+select:hover,.cell-input:hover{border-color:var(--rule)}
+select.yes{color:var(--pass); font-weight:600}
+select.no{color:var(--fail); font-weight:600}
+select.insufficient{color:var(--warn); font-weight:600}
+.cell-input.rev{width:130px; text-align:right}
+.cell-input.geo{width:150px}
+.edited{box-shadow:inset 0 -2px 0 var(--steel)}
+
+.verdict{display:inline-block; min-width:64px; text-align:center; font-weight:800; font-size:14px; padding:6px 12px; border-radius:5px}
+.verdict.yes{background:var(--pass-soft); color:var(--pass)}
+.verdict.no{background:var(--fail-soft); color:var(--fail)}
+.remove{background:none; border:none; color:var(--muted); font-size:18px; padding:0 6px}
+
+tr.detail td{background:var(--paper); padding:18px 20px 22px}
+.detail-grid{display:grid; grid-template-columns:minmax(220px,1fr) 2fr; gap:28px}
+.detail h3{font-size:14px; margin:0 0 8px}
+.rev-table{min-width:0; width:auto; font-size:14px}
+tr.detail .rev-table th,tr.detail .rev-table td{padding:5px 18px 5px 0; background:none; border-bottom:1px solid var(--rule)}
+.evidence dl{margin:0; display:grid; grid-template-columns:110px 1fr; gap:6px 12px; font-size:14px}
+.evidence dt{font-weight:600}
+.evidence dd{margin:0; color:var(--muted)}
+.evidence q{color:var(--ink); quotes:"“" "”"}
+.flag{color:var(--warn); font-size:13px; margin-top:8px}
+
+.empty{padding:48px 24px; text-align:center; color:var(--muted)}
+.status{font-size:14px; color:var(--muted); min-height:1.5em; margin-top:10px}
+.status.err{color:var(--fail)}
+.legend{font-size:13px; color:var(--muted); margin-top:10px}
+
+@media (max-width:720px){
+  header{grid-template-columns:1fr}
+  .privacy{text-align:left; max-width:none}
+  h1{font-size:34px}
+  .detail-grid{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Deal Screener</h1>
+      <p class="lede">Drop in investment pitch PDFs. Each one is checked against the fund's criteria, and you can correct any value before exporting to Excel.</p>
+    </div>
+    <p class="privacy">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      PDFs are read in your browser. Nothing is uploaded.
+    </p>
+  </header>
+
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept="application/pdf" multiple>
+    <strong>Drop pitch PDFs here</strong>
+    <span>or click to choose files</span>
+  </label>
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+
+  <section class="criteria" aria-label="Screening criteria">
+    <h2>Criteria</h2>
+    <label class="field">Min 2025 revenue ($M)<input type="number" id="minRev" value="20" min="0" step="1"></label>
+    <label class="field">Max 2025 revenue ($M)<input type="number" id="maxRev" value="80" min="0" step="1"></label>
+    <label class="field">Min yearly growth (%)<input type="number" id="minGrowth" value="10" min="0" step="0.5"></label>
+    <div class="field">Geography<span class="static">United States or Canada</span></div>
+    <div class="field">Sector<span class="static">B2B software or tech-enabled services</span></div>
+    <div class="field">Also required<span class="static">EBITDA &gt; 0, majority stake, 2+ years of revenue incl. 2025</span></div>
+  </section>
+
+  <div class="bar">
+    <div class="tally" id="tally"></div>
+    <div class="actions">
+      <button id="clear" disabled>Clear all</button>
+      <button id="export" class="primary" disabled>Export to Excel</button>
+    </div>
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead><tr>
+        <th scope="col">Company</th><th scope="col">Sector</th><th scope="col">Geography</th>
+        <th scope="col" class="num">Annual Revenue</th><th scope="col">Profitability</th><th scope="col">Growth</th>
+        <th scope="col">Ownership</th><th scope="col">Eligible</th><th scope="col"><span class="sr" hidden>Remove</span></th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="9" class="empty">No companies yet. Add a pitch PDF above to start screening.</td></tr></tbody>
+    </table>
+  </div>
+  <p class="legend">Click a company name to see the revenue by year and the text each result was based on. Values you change are underlined.</p>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+/* ---------- extraction rules ---------- */
+const SECTOR_TERMS = [/\bb2b\b/i,/business[- ]to[- ]business/i,/\bsaas\b/i,/software[- ]as[- ]a[- ]service/i,/enterprise software/i,
+  /tech(nology)?[- ]enabled (business )?services?/i,/managed (it )?services/i,/business process outsourcing/i];
+const B2C_TERMS = [/\bb2c\b/i,/business[- ]to[- ]consumer/i,/direct[- ]to[- ]consumer/i,/\bd2c\b/i,/\bdtc\b/i];
+const COUNTRY = {
+  "United States":[/united states of america/i,/united states/i,/\bu\.s\.a\.?/i,/\busa\b/i,/\bu\.s\.(?=[\s,;)]|$)/i,/\bus-based\b/i],
+  "Canada":[/\bcanada\b/i,/\bcanadian\b/i]
+};
+const US_STATES = /\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b/;
+const US_STATE_NAMES = /\b(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming|District of Columbia)\b/i;
+const CA_PROV_CODES = /,\s*(ON|QC|BC|AB|MB|SK|NS|NB|NL|PE)\b/;
+const CA_PROV = /\b(Ontario|Quebec|Québec|British Columbia|Alberta|Manitoba|Saskatchewan|Nova Scotia|New Brunswick|Newfoundland|Prince Edward Island)\b/i;
+// Cities that exist only in the US or Canada, or are qualified with a state/province when the name is shared abroad
+const US_CITIES = /(?<![A-Za-z])(New York City|New York|NYC|Los Angeles|Chicago|Houston|Phoenix|Philadelphia|San Antonio|San Diego|Dallas|San Jose|Austin|Jacksonville|Fort Worth|Columbus|Charlotte|San Francisco|Indianapolis|Seattle|Denver|Boston|El Paso|Nashville|Detroit|Oklahoma City|Portland|Las Vegas|Memphis|Louisville|Baltimore|Milwaukee|Albuquerque|Tucson|Fresno|Sacramento|Mesa|Kansas City|Atlanta|Omaha|Colorado Springs|Raleigh|Long Beach|Virginia Beach|Miami|Oakland|Minneapolis|Tulsa|Tampa|Arlington|New Orleans|Wichita|Cleveland|Bakersfield|Anaheim|Honolulu|Santa Ana|Riverside|Corpus Christi|Lexington|Stockton|Henderson|St\. Paul|Saint Paul|St\. Louis|Saint Louis|Cincinnati|Pittsburgh|Greensboro|Anchorage|Plano|Lincoln|Orlando|Irvine|Newark|Chula Vista|Toledo|Fort Wayne|Laredo|Jersey City|Chandler|Madison|Lubbock|Scottsdale|Reno|Buffalo|Gilbert|Glendale|Winston-Salem|Chesapeake|Norfolk|Fremont|Garland|Irving|Hialeah|Boise|Spokane|Baton Rouge|Tacoma|San Bernardino|Modesto|Des Moines|Santa Clarita|Fayetteville|Oxnard|Grand Rapids|Huntsville|Salt Lake City|Frisco|Yonkers|Amarillo|Huntington Beach|McKinney|Montgomery|Akron|Little Rock|Tempe|Overland Park|Grand Prairie|Tallahassee|Cape Coral|Knoxville|Shreveport|Sioux Falls|Chattanooga|Fort Lauderdale|Providence|Rancho Cucamonga|Santa Rosa|Pembroke Pines|Fort Collins|Cary|Naperville|Bellevue|Redmond|Kirkland|Savannah|Stamford|Hartford|New Haven|Hoboken|Palo Alto|Mountain View|Menlo Park|Redwood City|Santa Clara|Sunnyvale|Cupertino|Pasadena|Santa Monica|Boulder|Ann Arbor|Durham, NC|Charleston|Greenville|Birmingham, AL|Richmond, VA|Rochester, NY|Cambridge, MA|Burlington, VT|Manchester, NH|Dublin, OH|Wilmington|Albany|Syracuse|Dayton|Lansing|Provo|Salem|Eugene|Olympia|Bozeman|Missoula|Cheyenne|Fargo|Bismarck|Rapid City|Juneau|Jackson|Springfield|Columbia, SC|Columbia, MO|Charleston, WV|Morristown|Princeton|Round Rock|Cedar Park|Georgetown, TX|The Woodlands|Sugar Land|Alpharetta|Reston|Herndon|McLean|Tysons|Bethesda|Rockville|Silver Spring|Boca Raton|West Palm Beach|Sarasota|St\. Petersburg, FL|Clearwater)(?![A-Za-z])/i;
+const CA_CITIES = /(?<![A-Za-z])(Toronto|Montreal|Montréal|Vancouver|Calgary|Edmonton|Ottawa|Winnipeg|Quebec City|Québec City|Mississauga|Brampton|Laval|Markham|Vaughan|Gatineau|Saskatoon|Longueuil|Burnaby|Regina|Richmond Hill|Oakville|Oshawa|Barrie|Sherbrooke|Kitchener|Guelph|Kelowna|Abbotsford|Coquitlam|Saguenay|Lévis|Levis|Trois-Rivières|Trois-Rivieres|St\. John's|Fredericton|Moncton|Saint John|Charlottetown|Thunder Bay|Sudbury|Whitehorse|Yellowknife|Iqaluit|Nanaimo|Kamloops|Red Deer|Lethbridge|Hamilton, ON|London, ON|London, Ontario|Waterloo, ON|Waterloo, Ontario|Kingston, ON|Windsor, ON|Victoria, BC|Halifax, NS|Surrey, BC|Richmond, BC|Burlington, ON)(?![A-Za-z])/i;
+const FOREIGN = /(?<![A-Za-z])(United Kingdom|U\.K\.|\bUK\b|(?<!New )England|Scotland|Wales|Ireland|(?<!New )Mexico|Brazil|Germany|France|Spain|Italy|Netherlands|Belgium|Switzerland|Austria|Sweden|Norway|Denmark|Finland|Poland|Portugal|Israel|India|China|Japan|South Korea|Singapore|Australia|New Zealand|Philippines|Vietnam|Indonesia|Argentina|Colombia|Chile|Peru|South Africa|Nigeria|Kenya|Egypt|United Arab Emirates|UAE|Saudi Arabia|Turkey|Ukraine|Romania)(?![A-Za-z])/i;
+const MAJ_YES = [/majority (stake|ownership|interest|position|investment|recapitali[sz]ation)/i,/control(ling)? (stake|investment|interest|transaction)/i,
+  /\b51\s?%/i,/sale of (the )?company/i,/full (sale|exit)/i,/100\s?% (sale|acquisition)/i];
+const MAJ_NO = [/minority (stake|investment|only|interest|position)/i,/not (willing|open) to (sell|give|cede) (a )?(majority|control)/i,
+  /retain (majority|control)/i,/no change of control/i];
+const MULT = {k:1e3,thousand:1e3,m:1e6,mm:1e6,mn:1e6,million:1e6,b:1e9,bn:1e9,billion:1e9};
+const MONEY = String.raw`\(?\s?\$?\s?\(?(-?[\d,]+(?:\.\d+)?)\)?\s?(k|thousand|mm|mn|m|million|bn|b|billion)?\b`;
+
+function toNumber(num, unit, defMult, flags){
+  let v = parseFloat(num.replace(/,/g,""));
+  if (unit) return v * MULT[unit.toLowerCase()];
+  if (defMult !== 1) return v * defMult;
+  if (Math.abs(v) < 10000){ flags.add("A revenue or EBITDA figure had no unit, so it was read as millions."); return v*1e6; }
+  return v;
+}
+const firstMatch = (res, text) => { for (const r of res){ const m = text.match(r); if (m) return m; } return null; };
+function lineOf(text, idx){ const s = text.lastIndexOf("\n", idx)+1, e = text.indexOf("\n", idx); return text.slice(s, e<0?undefined:e).trim().slice(0,160); }
+
+async function pdfToLines(buf){
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const lines = [];
+  for (let p=1; p<=pdf.numPages; p++){
+    const page = await pdf.getPage(p), tc = await page.getTextContent();
+    const rows = new Map();
+    for (const it of tc.items){
+      if (!it.str || !it.str.trim()) continue;
+      const y = Math.round(it.transform[5]/3)*3;
+      if (!rows.has(y)) rows.set(y, []);
+      rows.get(y).push({x:it.transform[4], w:it.width, s:it.str});
+    }
+    [...rows.entries()].sort((a,b)=>b[0]-a[0]).forEach(([,items])=>{
+      items.sort((a,b)=>a.x-b.x);
+      const cells = []; let cur = null;
+      for (const it of items){
+        if (cur && it.x - cur.end < 12){ cur.s += (it.x - cur.end > 1 ? " " : "") + it.s; cur.end = it.x + it.w; }
+        else { cur = {s:it.s, end:it.x+it.w}; cells.push(cur); }
+      }
+      lines.push(cells.map(c=>c.s.trim()));
+    });
+  }
+  return lines;
+}
+
+function extract(lines, fileName){
+  const text = lines.map(c=>c.join("   ")).join("\n");
+  const flags = new Set(), ev = {};
+  const defMult = /in (usd )?millions|\(\$\s?m+\)|\$\s?m+\b/i.test(text) ? 1e6 : 1;
+
+  // company
+  let m = text.match(/(?:company(?: name)?|legal name)\s*[:\-]\s*(.+)/i);
+  const company = m ? m[1].trim().slice(0,80) : fileName.replace(/\.pdf$/i,"");
+
+  // sector
+  const secHit = firstMatch(SECTOR_TERMS, text), b2c = firstMatch(B2C_TERMS, text);
+  const sector = secHit && !(b2c && !secHit) ? "Yes" : "No";
+  ev.Sector = secHit ? lineOf(text, secHit.index) : b2c ? lineOf(text, b2c.index) : null;
+
+  // geography
+  m = text.match(/(?:headquarter(?:s|ed)(?: in)?|location|geography|based in)\s*[:\-]?\s*(.+)/i);
+  const scope = m ? m[1] : text;
+  let geography = null, via = null;
+  for (const [country, pats] of Object.entries(COUNTRY)){ if (firstMatch(pats, scope)){ geography = country; break; } }
+  // another country named explicitly (e.g. "London, England") wins over any city/state guess
+  const foreign = !geography && scope.match(FOREIGN);
+  if (!geography && !foreign){
+    const tries = [["Canada", CA_PROV], ["Canada", CA_PROV_CODES], ["United States", US_STATE_NAMES], ["United States", US_STATES],
+                   ["Canada", CA_CITIES], ["United States", US_CITIES]];
+    for (const [country, re] of tries){ const hit = scope.match(re); if (hit){ geography = country; via = hit[1] || hit[0]; break; } }
+  }
+  if (via) flags.add(`Country inferred from "${via.trim()}".`);
+  if (!geography) geography = m ? m[1].trim().slice(0,60) : "Not found";
+  ev.Geography = m ? lineOf(text, m.index) : null;
+
+  // revenue by year: tables first, then sentences
+  const rev = {}, revEv = [];
+  for (let i=0; i<lines.length; i++){
+    const years = lines[i].map(c => (c.match(/^(?:FY\s?)?(20\d\d)\s?[AEPF]?$/i)||[])[1]).filter(Boolean).map(Number);
+    if (years.length < 2) continue;
+    for (let j=i+1; j<Math.min(i+20, lines.length); j++){
+      const label = lines[j][0] || "";
+      if (!/revenue|sales/i.test(label) || /growth|%|margin|per /i.test(label)) continue;
+      const rest = lines[j].join("   ").replace(/^[^\d$(\-]*/,"");
+      const nums = [...rest.matchAll(new RegExp(MONEY,"gi"))].map(x=>toNumber(x[1],x[2],defMult,flags));
+      if (nums.length >= years.length){ years.forEach((y,k)=>{ rev[y] = nums[k]; }); revEv.push(lines[j].join(" ").slice(0,160)); }
+      break;
+    }
+  }
+  const pats = [
+    new RegExp(String.raw`(?:fy[ \t]?)?(20\d\d)[ \t]*(?:annual[ \t]+)?(?:revenue|sales)[ \t]*(?:of|was|:|=|-)?[ \t]*` + MONEY, "gi"),
+    new RegExp(String.raw`(?:revenue|sales)[ \t]*(?:in|for|\()?[ \t]*(?:fy[ \t]?)?(20\d\d)\)?[ \t]*(?:of|was|:|=|-)?[ \t]*` + MONEY, "gi"),
+  ];
+  for (const p of pats) for (const x of text.matchAll(p)){
+    const y = +x[1];
+    if (!(y in rev)){ rev[y] = toNumber(x[2], x[3], defMult, flags); revEv.push(lineOf(text, x.index)); }
+  }
+  ev.Revenue = revEv.length ? revEv.slice(0,3).join(" / ") : null;
+
+  // EBITDA
+  m = new RegExp(String.raw`(?:adj(?:usted)?\.?\s+)?ebitda(?:\s*\((?:fy\s?)?20\d\d[a-z]?\))?[^\n\d\-(%]{0,40}` + MONEY + String.raw`(?!\s?%)`, "i").exec(text);
+  let ebitda = null;
+  if (m){
+    const start = m.index + m[0].indexOf(m[1]);
+    ebitda = toNumber(m[1], m[2], defMult, flags);
+    if (ebitda > 0 && text.slice(Math.max(start-3,0), start).includes("(")) ebitda = -ebitda;
+    ev.Profitability = lineOf(text, m.index);
+  }
+
+  // ownership
+  const no = firstMatch(MAJ_NO, text), yes = firstMatch(MAJ_YES, text);
+  const ownership = no ? "No" : yes ? "Yes" : "No";
+  ev.Ownership = no ? lineOf(text, no.index) : yes ? lineOf(text, yes.index) : null;
+
+  return {company, sector, geography, rev, ebitda, ownership, ev, flags:[...flags]};
+}
+
+/* ---------- state + rules ---------- */
+const state = { rows: [], open: new Set() };
+let uid = 0;
+const crit = () => ({
+  min: (+document.getElementById("minRev").value || 0) * 1e6,
+  max: (+document.getElementById("maxRev").value || 0) * 1e6,
+  growth: (+document.getElementById("minGrowth").value || 0) / 100
+});
+
+function growthOf(rev, minG){
+  const years = Object.keys(rev).map(Number).sort();
+  if (years.length < 2 || !years.includes(2025)) return {value:"Insufficient Information", rates:[]};
+  const rates = [];
+  for (let i=1; i<years.length; i++){
+    const a = years[i-1], b = years[i];
+    if (rev[a] <= 0) return {value:"Insufficient Information", rates};
+    rates.push({from:a, to:b, r: Math.pow(rev[b]/rev[a], 1/(b-a)) - 1});
+  }
+  return {value: rates.every(x=>x.r >= minG - 1e-9) ? "Yes" : "No", rates};
+}
+
+function derived(row){
+  const c = crit(), g = growthOf(row.raw.rev, c.growth);
+  const auto = {
+    Sector: row.raw.sector,
+    Geography: row.raw.geography,
+    Revenue: 2025 in row.raw.rev ? Math.round(row.raw.rev[2025]) : null,
+    Profitability: row.raw.ebitda !== null && row.raw.ebitda > 0 ? "Yes" : "No",
+    Growth: g.value,
+    Ownership: row.raw.ownership
+  };
+  const v = {...auto, ...row.overrides};
+  v.Eligible = (v.Sector==="Yes" && (v.Geography==="United States" || v.Geography==="Canada") &&
+    Number.isFinite(v.Revenue) && v.Revenue >= c.min && v.Revenue <= c.max &&
+    v.Profitability==="Yes" && v.Growth==="Yes" && v.Ownership==="Yes") ? "Yes" : "No";
+  return {v, rates:g.rates};
+}
+
+/* ---------- rendering ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
+const money = n => Number.isFinite(n) ? "$" + Math.round(n).toLocaleString("en-US") : "—";
+const cls = v => v==="Yes" ? "yes" : v==="No" ? "no" : "insufficient";
+
+function sel(id, field, value, options, edited){
+  return `<select data-id="${id}" data-field="${field}" class="${cls(value)}${edited?" edited":""}" aria-label="${field}">` +
+    options.map(o=>`<option${o===value?" selected":""}>${o}</option>`).join("") + `</select>`;
+}
+
+function render(){
+  const tb = $("rows");
+  if (!state.rows.length){
+    tb.innerHTML = `<tr><td colspan="9" class="empty">No companies yet. Add a pitch PDF above to start screening.</td></tr>`;
+    $("tally").innerHTML = ""; $("export").disabled = $("clear").disabled = true; return;
+  }
+  let eligible = 0, html = "";
+  for (const row of state.rows){
+    const {v, rates} = derived(row), o = row.overrides;
+    if (v.Eligible==="Yes") eligible++;
+    const open = state.open.has(row.id);
+    html += `<tr class="company">
+      <td class="name"><button class="expand" data-toggle="${row.id}" aria-expanded="${open}" aria-label="Show details for ${esc(row.raw.company)}">${open?"▾":"▸"}</button>
+        ${esc(row.raw.company)}<small>${esc(row.file)}</small></td>
+      <td>${sel(row.id,"Sector",v.Sector,["Yes","No"],"Sector" in o)}</td>
+      <td><input class="cell-input geo${"Geography" in o?" edited":""}" data-id="${row.id}" data-field="Geography" value="${esc(v.Geography)}" aria-label="Geography"></td>
+      <td class="num"><input class="cell-input rev${"Revenue" in o?" edited":""}" data-id="${row.id}" data-field="Revenue" inputmode="numeric" value="${Number.isFinite(v.Revenue) ? money(v.Revenue) : ""}" placeholder="not found" aria-label="Annual revenue"></td>
+      <td>${sel(row.id,"Profitability",v.Profitability,["Yes","No"],"Profitability" in o)}</td>
+      <td>${sel(row.id,"Growth",v.Growth,["Yes","No","Insufficient Information"],"Growth" in o)}</td>
+      <td>${sel(row.id,"Ownership",v.Ownership,["Yes","No"],"Ownership" in o)}</td>
+      <td><span class="verdict ${cls(v.Eligible)}">${v.Eligible}</span></td>
+      <td><button class="remove" data-remove="${row.id}" aria-label="Remove ${esc(row.raw.company)}">×</button></td>
+    </tr>`;
+    if (open){
+      const years = Object.keys(row.raw.rev).map(Number).sort();
+      const revRows = years.length ? years.map(y=>{
+        const r = rates.find(x=>x.to===y);
+        return `<tr><td>${y}</td><td class="num">${money(row.raw.rev[y])}</td><td class="num">${r ? (r.r*100).toFixed(1)+"%" : ""}</td></tr>`;
+      }).join("") : `<tr><td colspan="3">No yearly revenue found</td></tr>`;
+      const e = row.raw.ev;
+      const evi = k => e[k] ? `<q>${esc(e[k])}</q>` : "Nothing matched in the PDF";
+      html += `<tr class="detail"><td colspan="9"><div class="detail-grid">
+        <div><h3>Revenue by year</h3>
+          <table class="rev-table"><thead><tr><th>Year</th><th class="num">Revenue</th><th class="num">YoY</th></tr></thead><tbody>${revRows}</tbody></table>
+          <p style="font-size:14px;margin:10px 0 0">EBITDA: <b>${row.raw.ebitda===null ? "not found" : (row.raw.ebitda<0?"−":"") + money(Math.abs(row.raw.ebitda))}</b></p>
+          ${row.raw.flags.map(f=>`<p class="flag">${esc(f)}</p>`).join("")}
+        </div>
+        <div class="evidence"><h3>What each result was based on</h3><dl>
+          <dt>Sector</dt><dd>${evi("Sector")}</dd>
+          <dt>Geography</dt><dd>${evi("Geography")}</dd>
+          <dt>Revenue</dt><dd>${evi("Revenue")}</dd>
+          <dt>Profitability</dt><dd>${evi("Profitability")}</dd>
+          <dt>Ownership</dt><dd>${evi("Ownership")}</dd>
+        </dl></div>
+      </div></td></tr>`;
+    }
+  }
+  tb.innerHTML = html;
+  $("tally").innerHTML = `<b>${eligible}</b> of ${state.rows.length} ${state.rows.length===1?"company":"companies"} eligible`;
+  $("export").disabled = $("clear").disabled = false;
+}
+
+/* ---------- events ---------- */
+async function handleFiles(files){
+  const pdfs = [...files].filter(f => f.type==="application/pdf" || /\.pdf$/i.test(f.name));
+  const status = $("status"); status.className = "status";
+  if (!pdfs.length){ status.textContent = "Only PDF files can be screened. Choose a .pdf file."; status.className="status err"; return; }
+  let done = 0, failed = [];
+  for (const f of pdfs){
+    status.textContent = `Reading ${f.name} (${done+1} of ${pdfs.length})…`;
+    try{
+      const lines = await pdfToLines(await f.arrayBuffer());
+      if (!lines.length) throw new Error("no text");
+      state.rows.push({id:++uid, file:f.name, raw:extract(lines, f.name), overrides:{}});
+      done++;
+    }catch(err){ failed.push(f.name); console.error(f.name, err); }
+    render();
+  }
+  status.textContent = `Screened ${done} ${done===1?"PDF":"PDFs"}.` +
+    (failed.length ? ` Couldn't read text from ${failed.join(", ")}. Scanned PDFs need OCR first.` : "");
+  if (failed.length) status.className = "status err";
+  $("file").value = "";
+}
+
+$("file").addEventListener("change", e => handleFiles(e.target.files));
+const drop = $("drop");
+["dragenter","dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => handleFiles(e.dataTransfer.files));
+["minRev","maxRev","minGrowth"].forEach(id => $(id).addEventListener("input", render));
+
+$("rows").addEventListener("click", e => {
+  const t = e.target.closest("[data-toggle],[data-remove]"); if (!t) return;
+  if (t.dataset.toggle){ const id = +t.dataset.toggle; state.open.has(id) ? state.open.delete(id) : state.open.add(id); }
+  if (t.dataset.remove){ state.rows = state.rows.filter(r => r.id !== +t.dataset.remove); }
+  render();
+});
+$("rows").addEventListener("change", e => {
+  const t = e.target; if (!t.dataset.field) return;
+  const row = state.rows.find(r => r.id === +t.dataset.id);
+  let val = t.value;
+  if (t.dataset.field === "Revenue"){ const n = parseInt(val.replace(/[^\d]/g,""),10); val = Number.isFinite(n) ? n : null; }
+  row.overrides[t.dataset.field] = val;
+  render();
+});
+$("clear").addEventListener("click", () => { state.rows = []; state.open.clear(); $("status").textContent = ""; render(); });
+
+/* ---------- Excel export ---------- */
+$("export").addEventListener("click", async () => {
+  const c = crit(), wb = new ExcelJS.Workbook();
+  const F = {name:"Arial", size:10}, border = {top:{style:"thin",color:{argb:"FFBFBFBF"}},left:{style:"thin",color:{argb:"FFBFBFBF"}},bottom:{style:"thin",color:{argb:"FFBFBFBF"}},right:{style:"thin",color:{argb:"FFBFBFBF"}}};
+  const ws = wb.addWorksheet("Screening", {views:[{state:"frozen", ySplit:1}]});
+  ws.columns = [
+    {header:"Company",width:30},{header:"Sector",width:10},{header:"Geography",width:20},{header:"Annual Revenue",width:18},
+    {header:"Profitability",width:14},{header:"Growth",width:26},{header:"Ownership",width:12},{header:"Eligible",width:11}];
+  ws.getRow(1).eachCell(cell => { cell.font = {...F, bold:true, color:{argb:"FFFFFFFF"}}; cell.fill = {type:"pattern",pattern:"solid",fgColor:{argb:"FF1F3864"}}; cell.border = border; cell.alignment = {horizontal:"center"}; });
+
+  const last = Math.max(state.rows.length + 50, 100) + 1;
+  state.rows.forEach((row, i) => {
+    const {v} = derived(row);
+    ws.getRow(i+2).values = [row.raw.company, v.Sector, v.Geography, v.Revenue ?? null, v.Profitability, v.Growth, v.Ownership];
+  });
+  for (let r=2; r<=last; r++){
+    const row = ws.getRow(r);
+    for (let col=1; col<=7; col++){ const cell = row.getCell(col); cell.font = {...F, color:{argb:"FF0000FF"}}; cell.border = border; }
+    row.getCell(4).numFmt = "$#,##0";
+    ["B","E","G"].forEach(L => ws.getCell(`${L}${r}`).dataValidation = {type:"list", allowBlank:true, formulae:['"Yes,No"']});
+    ws.getCell(`F${r}`).dataValidation = {type:"list", allowBlank:true, formulae:['"Yes,No,Insufficient Information"']};
+    const data = state.rows[r-2], res = data ? derived(data).v.Eligible : "";
+    const e = row.getCell(8);
+    e.value = {formula:`IF(A${r}="","",IF(AND(B${r}="Yes",OR(C${r}="United States",C${r}="Canada"),ISNUMBER(D${r}),D${r}>=Criteria!$B$4,D${r}<=Criteria!$B$5,E${r}="Yes",F${r}="Yes",G${r}="Yes"),"Yes","No"))`, result:res};
+    e.font = {...F, bold:true}; e.border = border; e.alignment = {horizontal:"center"};
+  }
+  ws.addConditionalFormatting({ref:`H2:H${last}`, rules:[
+    {type:"cellIs", operator:"equal", formulae:['"Yes"'], style:{fill:{type:"pattern",pattern:"solid",bgColor:{argb:"FFC6EFCE"}}}},
+    {type:"cellIs", operator:"equal", formulae:['"No"'], style:{fill:{type:"pattern",pattern:"solid",bgColor:{argb:"FFFFC7CE"}}}}]});
+
+  const cs = wb.addWorksheet("Criteria");
+  cs.columns = [{width:34},{width:22},{width:90}];
+  cs.getCell("A1").value = "Screening thresholds"; cs.getCell("A1").font = {...F, bold:true, size:13};
+  const rows = [
+    ["Parameter","Value","Rule / note"],
+    ["Minimum 2025 revenue", c.min, "Revenue must be >= this."],
+    ["Maximum 2025 revenue", c.max, "Revenue must be <= this."],
+    ["Minimum YoY revenue growth", c.growth, "Applied when the Growth column was set. Changing it here does not recompute Growth."],
+    ["Minimum years of revenue", 2, "One must be 2025; otherwise Growth = 'Insufficient Information'."],
+    ["Eligible countries", "United States, Canada", "Variants like USA, U.S.A., United States of America are normalized."],
+    ["Sector", "B2B software / tech-enabled business services", ""],
+    ["Profitability", "EBITDA > 0", "A positive stated EBITDA counts as profitable."],
+    ["Ownership", "Majority stake offered", ""]];
+  rows.forEach((vals, i) => {
+    const r = cs.getRow(i+3); r.values = vals;
+    r.eachCell(cell => { cell.border = border; cell.alignment = {wrapText:true, vertical:"top"}; cell.font = i===0 ? {...F,bold:true} : F; });
+  });
+  ["B4","B5"].forEach(a => { const x = cs.getCell(a); x.numFmt = "$#,##0"; x.font = {...F, color:{argb:"FF0000FF"}}; x.fill = {type:"pattern",pattern:"solid",fgColor:{argb:"FFFFFF00"}}; });
+  cs.getCell("B6").numFmt = "0.0%"; cs.getCell("B6").font = {...F, color:{argb:"FF0000FF"}}; cs.getCell("B6").fill = {type:"pattern",pattern:"solid",fgColor:{argb:"FFFFFF00"}};
+  cs.getCell("A13").value = "Blue cells on 'Screening' are inputs you can edit. Eligible is a formula. Yellow cells here are thresholds.";
+  cs.getCell("A13").font = F;
+
+  const blob = new Blob([await wb.xlsx.writeBuffer()], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `investment_screening_${new Date().toISOString().slice(0,10)}.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  $("status").className = "status"; $("status").textContent = `Exported ${state.rows.length} ${state.rows.length===1?"company":"companies"} to Excel.`;
+});
+
+render();
+</script>
+</body>
+</html>
